@@ -413,6 +413,7 @@ def test_stress_no_text_overlap_other_axes_and_no_glyph_warnings():
                 cjk_found = True
             except Exception:
                 pass
+    style.use("paper", variant="C", palette="npg")  # re-resolve font.family with new fonts
 
     # (a) 3x4 shared facet-like grid
     with warnings.catch_warnings(record=True) as caught:
@@ -496,10 +497,11 @@ def test_stress_no_text_overlap_other_axes_and_no_glyph_warnings():
         cl.edge_legend(fig, axes, loc="right")
         fig.canvas.draw()
         glyph_warns = [w for w in caught if "Glyph" in str(w.message)]
-        if cjk_found:  # glyph check is only meaningful when a CJK font is installed
-            assert not glyph_warns, f"Glyph warnings with Chinese labels: {glyph_warns}"
+        if cjk_found and style.cjk_family():  # only meaningful when a CJK family is in use
+            msgs = sorted({str(w.message) for w in glyph_warns})
+            assert not glyph_warns, f"Glyph warnings with {style.cjk_family()!r}: {msgs[:5]}"
         else:
-            warnings.warn("No CJK font found; CJK glyph check skipped", stacklevel=1)
+            warnings.warn("No CJK font in use; CJK glyph check skipped", stacklevel=1)
         info0 = getattr(axes[0], cl._PANEL_LABEL_ATTR, None)
         assert info0 and info0.get("folded") and info0["artist"].get_text() == "(a)"
         assert "\u5faa\u73af" in (axes[0].get_title(loc="left") or "")

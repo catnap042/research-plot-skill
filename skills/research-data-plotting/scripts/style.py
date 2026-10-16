@@ -68,9 +68,45 @@ VARIANTS = {
     "D": dict(name="Nature minimal",     palette="npg", spines="L",   ticks="out", grid=None,   scale=0.8),
 }
 _FONT_PREF = ["Arial", "Helvetica", "Arimo", "Liberation Sans", "SimHei", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "DejaVu Sans"]
+# A family counts as CJK-capable if its registered font file maps U+4E2D. The
+# registered name depends on platform and matplotlib version (matplotlib < 3.11
+# registers only the first face of a .ttc, e.g. "Noto Sans CJK JP" not "... SC";
+# macOS ships Hiragino / Heiti / Songti rather than a findable "PingFang SC"),
+# so names alone are not enough.
+_cjk_cache = {}
+
+
+def _is_cjk_family(name):
+    if name not in _cjk_cache:
+        fm = mpl.font_manager
+        try:
+            path = fm.findfont(fm.FontProperties(family=name), fallback_to_default=False)
+            _cjk_cache[name] = 0x4E2D in mpl.ft2font.FT2Font(path).get_charmap()
+        except Exception:
+            _cjk_cache[name] = False
+    return _cjk_cache[name]
+
+
 def _fonts():
     have = {f.name for f in mpl.font_manager.fontManager.ttflist}
-    return [f for f in _FONT_PREF if f in have] or ["DejaVu Sans"]
+    fams = [f for f in _FONT_PREF if f in have]
+    if not any(_is_cjk_family(f) for f in fams):
+        # No preferred CJK family registered: fall back to any registered CJK family.
+        # Probe likely sans CJK names first; stop at the first real hit.
+        rank = ("Sans CJK", "Hei", "Gothic", "Hiragino Sans", "Sans", "CJK")
+        cands = sorted((n for n in have if "Mono" not in n),
+                       key=lambda n: (next((i for i, k in enumerate(rank) if k in n), len(rank)), n))
+        hit = next((n for n in cands if _is_cjk_family(n)), None)
+        if hit:
+            fams.insert(len(fams) - ("DejaVu Sans" in fams), hit)
+    return fams or ["DejaVu Sans"]
+
+
+def cjk_family():
+    """Name of the CJK-capable family in the active font.family list, or None."""
+    fam = mpl.rcParams.get("font.family", [])
+    fam = [fam] if isinstance(fam, str) else list(fam)
+    return next((f for f in fam if _is_cjk_family(f)), None)
 
 # ---- Talk preset (theme_bw + npg, enlarged for 16:9 slides, figure ~ half slide width) ----
 # 16:9 slide = 13.33 in (338.7 mm) wide -> half width ≈ 165 mm. Sizes in pt.
