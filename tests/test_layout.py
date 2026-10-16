@@ -470,16 +470,6 @@ def test_stress_no_text_overlap_other_axes_and_no_glyph_warnings():
             assert not sa.overlaps(sc)
         plt.close(fig)
 
-    # (c) long Chinese labels — panel labels fold into titles (glyph check: separate test)
-    style.use("paper", variant="C", palette="npg")
-    fig, axes = _chinese_label_figure()
-    info0 = getattr(axes[0], cl._PANEL_LABEL_ATTR, None)
-    assert info0 and info0.get("folded") and info0["artist"].get_text() == "(a)"
-    assert "\u5faa\u73af" in (axes[0].get_title(loc="left") or "")
-    items = _collect_text_bboxes(fig, list(axes))
-    _assert_no_pairwise_text_overlap(items, tol=1.0)
-    plt.close(fig)
-
 
 def _register_cjk_system_fonts():
     from matplotlib import font_manager
@@ -510,12 +500,9 @@ def _chinese_label_figure():
     return fig, axes
 
 
-def test_cjk_labels_no_missing_glyphs():
-    """Chinese labels render without missing-glyph warnings when a CJK family is in use.
-
-    Skips visibly when no CJK font is available; CI_REQUIRE_CJK=1 turns that into a failure."""
+def _require_cjk_family():
+    """Return the CJK family in use; skip visibly if none (fail when CI_REQUIRE_CJK=1)."""
     import os
-    import warnings
 
     import style
 
@@ -525,7 +512,31 @@ def test_cjk_labels_no_missing_glyphs():
     if fam is None:
         if os.environ.get("CI_REQUIRE_CJK") == "1":
             pytest.fail("CI_REQUIRE_CJK=1 but no CJK font family is in use")
-        pytest.skip("no CJK font family in use; CJK glyph check skipped")
+        pytest.skip("no CJK font family in use; CJK check skipped")
+    return fam
+
+
+def test_stress_chinese_labels_fold_and_no_overlap():
+    """Long Chinese labels: panel labels fold into titles and texts do not overlap.
+
+    Needs a real CJK font: placeholder boxes have different metrics."""
+    _require_cjk_family()
+    fig, axes = _chinese_label_figure()
+    info0 = getattr(axes[0], cl._PANEL_LABEL_ATTR, None)
+    assert info0 and info0.get("folded") and info0["artist"].get_text() == "(a)"
+    assert "\u5faa\u73af" in (axes[0].get_title(loc="left") or "")
+    items = _collect_text_bboxes(fig, list(axes))
+    _assert_no_pairwise_text_overlap(items, tol=1.0)
+    plt.close(fig)
+
+
+def test_cjk_labels_no_missing_glyphs():
+    """Chinese labels render without missing-glyph warnings when a CJK family is in use.
+
+    Skips visibly when no CJK font is available; CI_REQUIRE_CJK=1 turns that into a failure."""
+    import warnings
+
+    fam = _require_cjk_family()
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         fig, _ = _chinese_label_figure()
