@@ -401,18 +401,7 @@ def test_stress_no_text_overlap_other_axes_and_no_glyph_warnings():
     import style
 
     style.use("paper", variant="C", palette="npg")
-    # Ensure CJK fonts are available for Chinese labels
-    from matplotlib import font_manager
-
-    cjk_found = False
-    cjk_keys = ("cjk", "simhei", "msyh", "pingfang", "hiragino", "heiti", "songti")
-    for p in font_manager.findSystemFonts():
-        if any(k in p.lower() for k in cjk_keys):
-            try:
-                font_manager.fontManager.addfont(p)
-                cjk_found = True
-            except Exception:
-                pass
+    _register_cjk_system_fonts()
     style.use("paper", variant="C", palette="npg")  # re-resolve font.family with new fonts
 
     # (a) 3x4 shared facet-like grid
@@ -481,33 +470,83 @@ def test_stress_no_text_overlap_other_axes_and_no_glyph_warnings():
             assert not sa.overlaps(sc)
         plt.close(fig)
 
-    # (c) long Chinese labels — no Glyph warnings; panel labels fold into titles
+    # (c) long Chinese labels — panel labels fold into titles (glyph check: separate test)
+    style.use("paper", variant="C", palette="npg")
+    fig, axes = _chinese_label_figure()
+    info0 = getattr(axes[0], cl._PANEL_LABEL_ATTR, None)
+    assert info0 and info0.get("folded") and info0["artist"].get_text() == "(a)"
+    assert "\u5faa\u73af" in (axes[0].get_title(loc="left") or "")
+    items = _collect_text_bboxes(fig, list(axes))
+    _assert_no_pairwise_text_overlap(items, tol=1.0)
+    plt.close(fig)
+
+
+def _register_cjk_system_fonts():
+    from matplotlib import font_manager
+
+    keys = ("cjk", "simhei", "msyh", "pingfang", "hiragino", "heiti", "songti")
+    for p in font_manager.findSystemFonts():
+        if any(k in p.lower() for k in keys):
+            try:
+                font_manager.fontManager.addfont(p)
+            except Exception:
+                pass
+
+
+def _chinese_label_figure():
+    import style
+
+    fig, axes = cl.subplots(1, 2, refwidth_mm=60, panel_labels=True)
+    axes = np.atleast_1d(axes)
+    for ax in axes:
+        ax.plot([1, 2, 3], [100, 98, 95], label="\u7535\u89e3\u6db2 A\uff081 mol\u00b7L\u207b\u00b9\uff09")
+        ax.set_xlabel("\u5faa\u73af\u6b21\u6570\uff0825 \u2103\uff0c1C/1C\uff09")
+        ax.set_title("\u5faa\u73af\u6027\u80fd\u5bf9\u6bd4")
+        style.finish(ax)
+    axes[0].set_ylabel("\u5bb9\u91cf\u4fdd\u6301\u7387\uff08%\uff0c\u76f8\u5bf9\u9996\u5708\uff09")
+    cl.sync_panel_labels(fig)
+    cl.edge_legend(fig, axes, loc="right")
+    fig.canvas.draw()
+    return fig, axes
+
+
+def test_cjk_labels_no_missing_glyphs():
+    """Chinese labels render without missing-glyph warnings when a CJK family is in use.
+
+    Skips visibly when no CJK font is available; CI_REQUIRE_CJK=1 turns that into a failure."""
+    import os
+    import warnings
+
+    import style
+
+    _register_cjk_system_fonts()
+    style.use("paper", variant="C", palette="npg")
+    fam = style.cjk_family()
+    if fam is None:
+        if os.environ.get("CI_REQUIRE_CJK") == "1":
+            pytest.fail("CI_REQUIRE_CJK=1 but no CJK font family is in use")
+        pytest.skip("no CJK font family in use; CJK glyph check skipped")
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        style.use("paper", variant="C", palette="npg")
-        fig, axes = cl.subplots(1, 2, refwidth_mm=60, panel_labels=True)
-        axes = np.atleast_1d(axes)
-        for i, ax in enumerate(axes):
-            ax.plot([1, 2, 3], [100, 98, 95], label="\u7535\u89e3\u6db2 A\uff081 mol·L⁻¹\uff09")
-            ax.set_xlabel("\u5faa\u73af\u6b21\u6570\uff0825 ℃\uff0c1C/1C\uff09")
-            ax.set_title("\u5faa\u73af\u6027\u80fd\u5bf9\u6bd4")
-            style.finish(ax)
-        axes[0].set_ylabel("\u5bb9\u91cf\u4fdd\u6301\u7387\uff08%\uff0c\u76f8\u5bf9\u9996\u5708\uff09")
-        cl.sync_panel_labels(fig)
-        cl.edge_legend(fig, axes, loc="right")
-        fig.canvas.draw()
-        glyph_warns = [w for w in caught if "Glyph" in str(w.message)]
-        if cjk_found and style.cjk_family():  # only meaningful when a CJK family is in use
-            msgs = sorted({str(w.message) for w in glyph_warns})
-            assert not glyph_warns, f"Glyph warnings with {style.cjk_family()!r}: {msgs[:5]}"
-        else:
-            warnings.warn("No CJK font in use; CJK glyph check skipped", stacklevel=1)
-        info0 = getattr(axes[0], cl._PANEL_LABEL_ATTR, None)
-        assert info0 and info0.get("folded") and info0["artist"].get_text() == "(a)"
-        assert "\u5faa\u73af" in (axes[0].get_title(loc="left") or "")
-        items = _collect_text_bboxes(fig, list(axes))
-        _assert_no_pairwise_text_overlap(items, tol=1.0)
-        plt.close(fig)
+        fig, _ = _chinese_label_figure()
+    plt.close(fig)
+    msgs = sorted({str(w.message) for w in caught if "Glyph" in str(w.message)})
+    assert not msgs, f"Glyph warnings with {fam!r}: {msgs[:5]}"
+
+
+def test_cjk_candidate_order():
+    import style
+
+    names = ["Dela Gothic One", "Hiragino Sans", "Hiragino Sans GB", "Noto Sans Mono CJK SC",
+             "Noto Sans CJK JP", "Noto Serif CJK SC", "Heiti TC", "Zen Maru Gothic Rounded",
+             "Noto Sans CJK SC", "Songti SC", "Liu Jian Mao Cao"]
+    order = style._cjk_candidate_order(names)
+    assert order.index("Hiragino Sans GB") < order.index("Hiragino Sans")
+    assert order.index("Noto Sans CJK SC") < order.index("Noto Sans CJK JP")
+    assert order[:2] == ["Hiragino Sans GB", "Noto Sans CJK SC"]
+    for bad in ("Dela Gothic One", "Noto Sans Mono CJK SC", "Noto Serif CJK SC",
+                "Zen Maru Gothic Rounded", "Songti SC", "Liu Jian Mao Cao"):
+        assert bad not in order
 
 
 def test_demo_figures_geometry_invariants():

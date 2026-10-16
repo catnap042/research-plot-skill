@@ -37,7 +37,10 @@ jobs:
         run: sudo apt-get update -q && sudo apt-get install -y -q fonts-noto-cjk
       - run: python -m pip install -r requirements-dev.txt
       - run: ruff check .
-      - run: python -m pytest -q tests
+      - name: Require CJK glyph check on Linux (fonts-noto-cjk installed above)
+        if: runner.os == 'Linux'
+        run: echo "CI_REQUIRE_CJK=1" >> "$GITHUB_ENV"
+      - run: python -m pytest -q -rs tests
       - name: Quickstart and gallery smoke test
         run: |
           python examples/quickstart.py out/quickstart

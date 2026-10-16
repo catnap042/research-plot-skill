@@ -68,11 +68,18 @@ VARIANTS = {
     "D": dict(name="Nature minimal",     palette="npg", spines="L",   ticks="out", grid=None,   scale=0.8),
 }
 _FONT_PREF = ["Arial", "Helvetica", "Arimo", "Liberation Sans", "SimHei", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", "DejaVu Sans"]
-# A family counts as CJK-capable if its registered font file maps U+4E2D. The
-# registered name depends on platform and matplotlib version (matplotlib < 3.11
-# registers only the first face of a .ttc, e.g. "Noto Sans CJK JP" not "... SC";
-# macOS ships Hiragino / Heiti / Songti rather than a findable "PingFang SC"),
-# so names alone are not enough.
+# A family counts as CJK-capable only if its font file has glyphs for ALL of these
+# common Simplified Chinese characters (plus full-width punctuation). The registered
+# name depends on platform and matplotlib version (matplotlib < 3.11 registers only
+# the first face of a .ttc, e.g. "Noto Sans CJK JP" not "... SC"; macOS ships
+# Hiragino / Heiti / Songti rather than a findable "PingFang SC"), and display fonts
+# with partial CJK coverage exist, so neither names nor one test glyph are enough.
+_CJK_PROBE = (
+    "\u4eec\u8fd9\u8bf4\u4e3a\u53d1\u5bf9\u5b66\u56fe\u6570\u636e"          # common words
+    "\u7535\u89e3\u6db2\u5faa\u73af\u6b21\u6027\u80fd\u6bd4\u5bb9\u91cf\u4fdd"  # test labels
+    "\u6301\u7387\u76f8\u9996\u5708\u5408\u6210\u6e29\u5ea6\u654f\u611f"
+    "\uff08\uff09\uff0c\u3001"
+)
 _cjk_cache = {}
 
 
@@ -81,22 +88,37 @@ def _is_cjk_family(name):
         fm = mpl.font_manager
         try:
             path = fm.findfont(fm.FontProperties(family=name), fallback_to_default=False)
-            _cjk_cache[name] = 0x4E2D in mpl.ft2font.FT2Font(path).get_charmap()
+            cmap = mpl.ft2font.FT2Font(path).get_charmap()
+            _cjk_cache[name] = all(ord(c) in cmap for c in _CJK_PROBE)
         except Exception:
             _cjk_cache[name] = False
     return _cjk_cache[name]
+
+
+_SC_TAGS = ("SC", "GB", "CN", "Simplified", "Hans")
+_SANS_TAGS = ("Sans CJK", "Sans", "Hei", "Gothic", "YaHei")
+_SKIP_TAGS = ("Mono", "Display", "One", "Rounded", "Serif", "Mincho", "Song", "Ming", "Kai")
+
+
+def _cjk_candidate_order(names):
+    """Fallback probe order: Simplified-Chinese sans names first, then other SC names,
+    then other sans. Families whose name marks them as neither SC nor sans (e.g.
+    calligraphy), and monospace / display / serif families, are dropped; glyph
+    coverage still decides among the rest."""
+    def tier(n):
+        words = n.replace("-", " ").split()
+        sc = any(t in words or t in n for t in _SC_TAGS[2:]) or any(t in words for t in _SC_TAGS[:2])
+        sans = any(t in n for t in _SANS_TAGS)
+        return (0 if sc and sans else 1 if sc else 2 if sans else 3, n)
+    keep = [n for n in names if not any(t in n for t in _SKIP_TAGS) and tier(n)[0] < 3]
+    return sorted(keep, key=tier)
 
 
 def _fonts():
     have = {f.name for f in mpl.font_manager.fontManager.ttflist}
     fams = [f for f in _FONT_PREF if f in have]
     if not any(_is_cjk_family(f) for f in fams):
-        # No preferred CJK family registered: fall back to any registered CJK family.
-        # Probe likely sans CJK names first; stop at the first real hit.
-        rank = ("Sans CJK", "Hei", "Gothic", "Hiragino Sans", "Sans", "CJK")
-        cands = sorted((n for n in have if "Mono" not in n),
-                       key=lambda n: (next((i for i, k in enumerate(rank) if k in n), len(rank)), n))
-        hit = next((n for n in cands if _is_cjk_family(n)), None)
+        hit = next((n for n in _cjk_candidate_order(have) if _is_cjk_family(n)), None)
         if hit:
             fams.insert(len(fams) - ("DejaVu Sans" in fams), hit)
     return fams or ["DejaVu Sans"]
