@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+out/
+.DS_Store
+.Rhistory
+comparisons/violin_data.csv
+comparisons/violin_ggplot2.png
+comparisons/violin_ours_gg.png
+docs/images/gallery/*/0*.png

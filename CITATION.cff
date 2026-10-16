@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use this skill in your work, please cite it as below."
+title: "research-plot-skill: an Agent Skill for consistent research figures in matplotlib"
+authors:
+  - alias: catnap042
+version: 0.1.0
+date-released: 2026-10-16
+license: MIT
+repository-code: "https://github.com/catnap042/research-plot-skill"
+keywords:
+  - matplotlib
+  - scientific-visualization
+  - agent-skill
+  - ggplot2
+  - theme_bw
