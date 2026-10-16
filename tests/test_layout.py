@@ -404,10 +404,12 @@ def test_stress_no_text_overlap_other_axes_and_no_glyph_warnings():
     # Ensure CJK fonts are available for Chinese labels
     from matplotlib import font_manager
 
+    cjk_found = False
     for p in font_manager.findSystemFonts():
         if any(k in p.lower() for k in ("cjk", "simhei", "msyh", "pingfang")):
             try:
                 font_manager.fontManager.addfont(p)
+                cjk_found = True
             except Exception:
                 pass
 
@@ -493,7 +495,8 @@ def test_stress_no_text_overlap_other_axes_and_no_glyph_warnings():
         cl.edge_legend(fig, axes, loc="right")
         fig.canvas.draw()
         glyph_warns = [w for w in caught if "Glyph" in str(w.message)]
-        assert not glyph_warns, f"Glyph warnings with Chinese labels: {glyph_warns}"
+        if cjk_found:  # glyph check is only meaningful when a CJK font is installed
+            assert not glyph_warns, f"Glyph warnings with Chinese labels: {glyph_warns}"
         info0 = getattr(axes[0], cl._PANEL_LABEL_ATTR, None)
         assert info0 and info0.get("folded") and info0["artist"].get_text() == "(a)"
         assert "\u5faa\u73af" in (axes[0].get_title(loc="left") or "")
